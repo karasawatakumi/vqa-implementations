@@ -11,7 +11,8 @@ def accuracy_score(predictions: List[str], ground_truths: List[List[str]]) -> fl
 
     Args:
         predictions: List of predicted answers
-        ground_truths: List of ground truth answers (each element is a list of 10 answers)
+        ground_truths: List of ground truth answers
+            (each element is a list of 10 answers)
 
     Returns:
         Accuracy score
@@ -33,7 +34,8 @@ def vqa_score(predictions: List[str], ground_truths: List[List[str]]) -> float:
 
     Args:
         predictions: List of predicted answers
-        ground_truths: List of ground truth answers (each element is a list of 10 answers)
+        ground_truths: List of ground truth answers
+            (each element is a list of 10 answers)
 
     Returns:
         VQA score

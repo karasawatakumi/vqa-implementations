@@ -32,12 +32,14 @@ dev = [
     "mypy>=0.991",
 ]
 
+
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["models", "datasets", "utils", "scripts"]
+packages = ["models", "datasets", "utils", "scripts", "tools"]
 
 [tool.black]
 line-length = 88

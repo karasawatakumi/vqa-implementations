@@ -93,16 +93,16 @@ The preprocessing script will:
 
 ```bash
 # Original VQA
-python train.py --config configs/original_vqa.yaml
+python tools/train.py --config configs/original_vqa.yaml
 
 # SAN
-python train.py --config configs/san.yaml
+python tools/train.py --config configs/san.yaml
 
 # BUTD
-python train.py --config configs/butd.yaml
+python tools/train.py --config configs/butd.yaml
 
 # MCAN
-python train.py --config configs/mcan.yaml
+python tools/train.py --config configs/mcan.yaml
 ```
 
 
@@ -110,7 +110,7 @@ python train.py --config configs/mcan.yaml
 
 ```bash
 # Evaluate on validation data
-python evaluate.py \
+python tools/evaluate.py \
     --model_path checkpoints/original_vqa/best_model.ckpt \
     --config configs/original_vqa.yaml \
     --split val
@@ -120,7 +120,7 @@ python evaluate.py \
 
 ```bash
 # Inference on single image
-python inference.py \
+python tools/inference.py \
     --model_path checkpoints/original_vqa/best_model.ckpt \
     --config configs/original_vqa.yaml \
     --image_path path/to/image.jpg \
@@ -139,9 +139,10 @@ vqa/
 ├── datasets/                   # Dataset classes
 ├── utils/                      # Utility functions
 ├── scripts/                    # Scripts
-├── train.py                   # Training script
-├── evaluate.py                # Evaluation script
-├── inference.py               # Inference script
+├── tools/                      # Training, evaluation, and inference tools
+│   ├── train.py               # Training script
+│   ├── evaluate.py            # Evaluation script
+│   └── inference.py           # Inference script
 ├── data/                      # Data directory
 ├── checkpoints/               # Trained models
 └── logs/                      # Log files

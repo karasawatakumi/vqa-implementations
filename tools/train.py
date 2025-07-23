@@ -172,7 +172,7 @@ def main():
 
     # Get model name from config if not specified
     model_name = args.model if args.model else config["model"]["name"]
-    
+
     # Create model
     model = get_model(model_name, config, vocab)
 
@@ -229,7 +229,8 @@ def main():
     trainer.fit(model, train_loader, val_loader)
 
     print(
-        f"Training completed. Best model saved at: {trainer.checkpoint_callback.best_model_path}"
+        f"Training completed. Best model saved at: "
+        f"{trainer.checkpoint_callback.best_model_path}"
     )
 
 
