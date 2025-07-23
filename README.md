@@ -45,7 +45,7 @@ A project implementing four major approaches for Visual Question Answering (VQA)
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Clone the repository
-git clone <repository-url>
+git clone git@github.com:karasawatakumi/vqa-implementations.git
 cd vqa
 
 # Create virtual environment and install dependencies
@@ -207,9 +207,15 @@ This project uses the following tools for code quality:
 - **flake8**: Linter
 - **mypy**: Type checker
 
-Usage:
+### Pre-commit
 
 ```bash
-pip install -e ".[dev]"
-black . && isort . && flake8 . && mypy .
+# install pre-commit
+pip install pre-commit
+
+# install pre-commit hooks
+pre-commit install
+
+# check all files
+pre-commit run --all-files
 ```
