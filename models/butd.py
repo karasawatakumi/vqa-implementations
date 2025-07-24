@@ -5,8 +5,154 @@ from typing import Tuple
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torchvision.models.detection import faster_rcnn_resnet50_fpn
 
 from models.base_model import BaseVQAModel
+
+
+class FasterRCNNFeatureExtractor(nn.Module):
+    """Faster R-CNN feature extractor for object detection"""
+
+    def __init__(self, pretrained: bool = True, num_objects: int = 36):
+        """
+        Args:
+            pretrained: Whether to use pretrained model
+            num_objects: Number of objects to extract
+        """
+        super().__init__()
+
+        # Load pretrained Faster R-CNN
+        self.faster_rcnn = faster_rcnn_resnet50_fpn(pretrained=pretrained)
+
+        # Feature dimension from ResNet backbone
+        self.feature_dim = 2048
+        self.num_objects = num_objects
+
+    def forward(self, images: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Extract object features using Faster R-CNN
+
+        Args:
+            images: Input images (batch_size, 3, H, W)
+
+        Returns:
+            object_features: Object features (batch_size, num_objects, feature_dim)
+            spatial_features: Spatial features (batch_size, num_objects, 4)
+        """
+        batch_size = images.size(0)
+
+        # Run Faster R-CNN
+        with torch.no_grad():
+            detections = self.faster_rcnn(images)
+
+        # Process detections
+        object_features_list = []
+        spatial_features_list = []
+
+        for i in range(batch_size):
+            boxes = detections[i]["boxes"]  # (num_detections, 4)
+            scores = detections[i]["scores"]  # (num_detections,)
+
+            # Filter by confidence threshold
+            keep = scores > 0.5
+            boxes = boxes[keep]
+            scores = scores[keep]
+
+            # Limit number of objects
+            if len(boxes) > self.num_objects:
+                # Keep top scoring objects
+                _, indices = torch.topk(scores, self.num_objects)
+                boxes = boxes[indices]
+                scores = scores[indices]
+
+            # Extract features for detected objects
+            if len(boxes) > 0:
+                # Use ROI pooling to extract features
+                roi_features = self._extract_roi_features(images[i : i + 1], boxes)
+
+                # Pad or truncate to fixed number of objects
+                if len(boxes) < self.num_objects:
+                    # Pad with zeros
+                    padding_size = self.num_objects - len(boxes)
+                    roi_features = F.pad(roi_features, (0, 0, 0, padding_size))
+                    boxes = F.pad(boxes, (0, 0, 0, padding_size))
+                else:
+                    # Truncate
+                    roi_features = roi_features[: self.num_objects]
+                    boxes = boxes[: self.num_objects]
+            else:
+                # No detections, use zeros
+                roi_features = torch.zeros(
+                    self.num_objects, self.feature_dim, device=images.device
+                )
+                boxes = torch.zeros(self.num_objects, 4, device=images.device)
+
+            object_features_list.append(roi_features)
+            spatial_features_list.append(boxes)
+
+        # Stack batch
+        object_features = torch.stack(object_features_list, dim=0)
+        spatial_features = torch.stack(spatial_features_list, dim=0)
+
+        return object_features, spatial_features
+
+    def _extract_roi_features(
+        self, image: torch.Tensor, boxes: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        Extract ROI features using ROI pooling
+
+        Args:
+            image: Single image (1, 3, H, W)
+            boxes: Bounding boxes (num_objects, 4)
+
+        Returns:
+            roi_features: ROI features (num_objects, feature_dim)
+        """
+        # Use ROI pooling from Faster R-CNN backbone
+        features = self.faster_rcnn.backbone(image)
+
+        # Use ROI pooling to extract features for each box
+        roi_features = []
+        for box in boxes:
+            roi_feat = self._extract_region_feature(features, box)
+            roi_features.append(roi_feat)
+
+        return torch.stack(roi_features, dim=0)
+
+    def _extract_region_feature(
+        self, features: dict, box: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        Extract feature for a specific region
+
+        Args:
+            features: Feature maps from backbone
+            box: Bounding box (4,)
+
+        Returns:
+            region_feature: Region feature (feature_dim,)
+        """
+        # Use the last feature map (highest resolution)
+        feature_map = features["3"]  # (1, 2048, H, W)
+
+        # Convert box coordinates to feature map coordinates
+        h, w = feature_map.shape[2:]
+        x1, y1, x2, y2 = box
+
+        # Scale coordinates to feature map size (assuming input size 800)
+        x1 = max(0, min(int(x1 * w / 800), w - 1))
+        y1 = max(0, min(int(y1 * h / 800), h - 1))
+        x2 = max(x1 + 1, min(int(x2 * w / 800), w))
+        y2 = max(y1 + 1, min(int(y2 * h / 800), h))
+
+        # Extract region
+        region = feature_map[0, :, y1:y2, x1:x2]
+
+        # Global average pooling
+        region_feature = F.adaptive_avg_pool2d(region, (1, 1)).squeeze()
+
+        return region_feature
 
 
 class BottomUpAttention(nn.Module):
@@ -101,8 +247,8 @@ class TopDownAttention(nn.Module):
         projected_question = self.question_projection(
             question_features
         )  # (batch_size, hidden_dim)
-        projected_question = projected_question.unsqueeze(1).expand(
-            -1, num_regions, -1
+        expanded_question = projected_question.unsqueeze(1).expand(
+            batch_size, num_regions, self.hidden_dim
         )  # (batch_size, num_regions, hidden_dim)
 
         # Region feature projection
@@ -110,23 +256,20 @@ class TopDownAttention(nn.Module):
             region_features
         )  # (batch_size, num_regions, hidden_dim)
 
-        # Feature combination
-        combined = torch.tanh(
-            projected_question + projected_regions
+        # Attention calculation
+        combined = (
+            expanded_question + projected_regions
         )  # (batch_size, num_regions, hidden_dim)
-
-        # Attention weight calculation
-        attention_weights = self.attention(combined)  # (batch_size, num_regions, 1)
-        attention_weights = F.softmax(
-            attention_weights, dim=1
-        )  # (batch_size, num_regions, 1)
+        attention_weights = torch.softmax(
+            self.attention(combined).squeeze(-1), dim=1
+        )  # (batch_size, num_regions)
 
         # Apply attention
         attended_features = torch.sum(
-            attention_weights * projected_regions, dim=1
-        )  # (batch_size, hidden_dim)
+            region_features * attention_weights.unsqueeze(-1), dim=1
+        )  # (batch_size, region_dim)
 
-        return attended_features, attention_weights.squeeze(-1)
+        return attended_features, attention_weights
 
 
 class BUTD(BaseVQAModel):
@@ -168,6 +311,11 @@ class BUTD(BaseVQAModel):
         self.feature_dim = feature_dim
         self.num_objects = num_objects
 
+        # Faster R-CNN feature extractor
+        self.feature_extractor = FasterRCNNFeatureExtractor(
+            pretrained=pretrained, num_objects=num_objects
+        )
+
         # Bottom-Up Attention
         self.bottom_up_attention = BottomUpAttention(
             feature_dim, hidden_dim, num_objects
@@ -192,21 +340,9 @@ class BUTD(BaseVQAModel):
         )
 
     def extract_image_features(self, images: torch.Tensor) -> torch.Tensor:
-        """Extract image features (object detection based)"""
-        # In actual implementation, use Faster R-CNN for object detection
-        # Here we use ResNet for simplicity
-        batch_size = images.size(0)
-
-        # Generate simple object features (in practice, use Faster R-CNN output)
-        # Spatial features (bounding box coordinates)
-        spatial_features = torch.rand(
-            batch_size, self.num_objects, 4, device=images.device
-        )
-
-        # Object features (in practice, use Faster R-CNN output)
-        object_features = torch.rand(
-            batch_size, self.num_objects, self.feature_dim, device=images.device
-        )
+        """Extract image features using Faster R-CNN object detection"""
+        # Extract object features using Faster R-CNN
+        object_features, spatial_features = self.feature_extractor(images)
 
         # Bottom-Up Attention
         region_features = self.bottom_up_attention(object_features, spatial_features)
