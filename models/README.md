@@ -93,17 +93,26 @@ class SAN(BaseVQAModel):
 ```python
 class BUTD(BaseVQAModel):
     def __init__(self, feature_dim=2048, num_objects=36):
+        # Faster R-CNN feature extractor
         # Object detection features
         # Spatial attention
     
     def extract_image_features(self, images):
-        # Faster R-CNN features
+        # Faster R-CNN object detection
+        # ROI feature extraction
         # Object region features
     
     def combine_features(self, image_features, question_features):
         # Spatial attention
         # Question-object attention
 ```
+
+**Faster R-CNN Integration**:
+- Uses pretrained Faster R-CNN ResNet-50 FPN
+- Extracts object features and bounding box coordinates
+- Supports configurable number of objects (default: 36)
+- Includes confidence threshold filtering
+- ROI pooling for feature extraction
 
 ### 4. MCAN - Modular Co-Attention Network (Yu et al., 2019)
 
